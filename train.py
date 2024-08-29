@@ -1,6 +1,7 @@
 import torch
 import torch.optim as optim
-import torch.nn as nn  
+import torch.nn as nn  # Import nn module
+from tqdm import tqdm  # Import tqdm for progress bars
 from data_preparation import load_data
 from model import create_model
 
@@ -13,7 +14,9 @@ def train_model(model, train_loader, val_loader, num_epochs=10):
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
-        for images, labels in train_loader:
+        
+        # Wrap the train_loader with tqdm for a progress bar
+        for images, labels in tqdm(train_loader, desc=f"Training Epoch {epoch+1}/{num_epochs}", unit="batch"):
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(images)
@@ -29,8 +32,10 @@ def train_model(model, train_loader, val_loader, num_epochs=10):
         model.eval()
         correct = 0
         total = 0
+        
+        # Wrap the val_loader with tqdm for a progress bar
         with torch.no_grad():
-            for images, labels in val_loader:
+            for images, labels in tqdm(val_loader, desc=f"Validation Epoch {epoch+1}/{num_epochs}", unit="batch"):
                 images, labels = images.to(device), labels.to(device)
                 outputs = model(images)
                 _, predicted = torch.max(outputs, 1)
