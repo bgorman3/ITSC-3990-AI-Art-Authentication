@@ -1,15 +1,20 @@
 import torch
 import torch.optim as optim
-import torch.nn as nn  # Import nn module
-from tqdm import tqdm  # Import tqdm for progress bars
+import torch.nn as nn  
+from tqdm import tqdm  
 from data_preparation import load_data
 from model import create_model
+from utils import ensure_dir_exists, save_to_csv, save_model
+import config
+import os
 
-def train_model(model, train_loader, val_loader, num_epochs=10):
+def train_model(model, train_loader, val_loader, num_epochs=config.NUM_EPOCHS, csv_filepath=config.RESULTS_PATH):
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
+
+    results = []
 
     for epoch in range(num_epochs):
         model.train()
@@ -44,6 +49,16 @@ def train_model(model, train_loader, val_loader, num_epochs=10):
         
         accuracy = correct / total
         print(f'Validation Accuracy: {accuracy:.4f}')
+
+        # Collect results for CSV
+        results.append([epoch+1, epoch_loss, accuracy])
+
+    # Save results to CSV
+    save_to_csv(results, csv_filepath, headers=['Epoch', 'Training Loss', 'Validation Accuracy'])
+
+    # Ensure the directory exists and save the model
+    ensure_dir_exists(os.path.dirname(config.MODEL_PATH))
+    save_model(model, config.MODEL_PATH)
 
 if __name__ == "__main__":
     train_loader, val_loader = load_data()
