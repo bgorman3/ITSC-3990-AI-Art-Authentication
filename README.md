@@ -5,6 +5,10 @@ New Research Project for ITSC 3990 Using AI to Authenticate Art
 
 Requirements 
 
+EMNIST Dataset
+MNIST  Dataset
+
+
 torch
 torchvision
 matplotlib
