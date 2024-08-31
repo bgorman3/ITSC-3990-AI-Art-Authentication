@@ -1,9 +1,9 @@
-import torch
-import torchvision
-import numpy
-from PIL import Image
-import matplotlib
-import sklearn
+import torch # type: ignore
+import torchvision# type: ignore
+import numpy# type: ignore
+from PIL import Image# type: ignore
+import matplotlib# type: ignore
+import sklearn# type: ignore
 
 print("Dependencies are installed and working correctly!")
 
@@ -33,7 +33,7 @@ x = torch.tensor([1.0, 2.0, 3.0])
 print(x + 1)
 
 
-from torchvision import datasets, transforms
+from torchvision import datasets, transforms # type: ignore
 transform = transforms.Compose([transforms.ToTensor()])
 dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
 print(f"Number of images in dataset: {len(dataset)}")

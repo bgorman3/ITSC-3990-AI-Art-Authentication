@@ -1,7 +1,7 @@
-import torch
-import torch.optim as optim
-import torch.nn as nn  
-from tqdm import tqdm  
+import torch # type: ignore
+import torch.optim as optim # type: ignore
+import torch.nn as nn  # type: ignore
+from tqdm import tqdm  # type: ignore
 from data_preparation import load_data
 from model import create_model
 from utils import ensure_dir_exists, save_to_csv, save_model

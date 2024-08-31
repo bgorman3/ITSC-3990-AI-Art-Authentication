@@ -1,5 +1,5 @@
-import matplotlib.pyplot as plt
-import torchvision
+import matplotlib.pyplot as plt # type: ignore
+import torchvision # type: ignore
 from data_preparation import load_data
 
 def show_batch(data_loader):

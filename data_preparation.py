@@ -1,6 +1,6 @@
-import torch
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset
+import torch # type: ignore
+from torchvision import datasets, transforms # type: ignore
+from torch.utils.data import DataLoader, Subset # type: ignore
 
 def load_data(batch_size=32):
     # Define the transformation to convert grayscale images to RGB and then resize and convert to tensor

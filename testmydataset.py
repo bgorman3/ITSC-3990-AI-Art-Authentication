@@ -1,9 +1,9 @@
-import torch
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from tqdm import tqdm  # Import tqdm for progress bar
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Button
+import torch # type: ignore
+from torch.utils.data import DataLoader # type: ignore
+from torchvision import datasets, transforms # type: ignore
+from tqdm import tqdm  # type: ignore
+import matplotlib.pyplot as plt # type: ignore
+from matplotlib.widgets import Button # type: ignore
 from utils import load_model
 from model import create_model
 import config

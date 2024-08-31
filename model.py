@@ -1,5 +1,5 @@
-import torchvision.models as models
-import torch.nn as nn
+import torchvision.models as models # type: ignore
+import torch.nn as nn # type: ignore
 
 def create_model():
     # Load the pre-trained ResNet model
