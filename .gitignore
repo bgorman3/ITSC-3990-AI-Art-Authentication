@@ -1,0 +1,4 @@
+# Ignore MNIST and EMNIST datasets
+data/MNIST/
+data/EMNIST/
+
