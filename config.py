@@ -6,4 +6,5 @@ NUM_EPOCHS = 15
 # Paths
 DATA_DIR = './data'
 MODEL_PATH = './models/model.pth'
-RESULTS_PATH = './results/results.csv'
+RESULTS_PATH = './ModelTrainingResults/results.csv'
+TESTING_PATH = './ModelTestingResults/testresults.csv'
