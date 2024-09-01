@@ -2,8 +2,8 @@ import torchvision.models as models # type: ignore
 import torch.nn as nn # type: ignore
 
 def create_model():
-    # Load the pre-trained ResNet model
-    model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+    # Load the pre-trained ResNet-101 model
+    model = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
 
     # Modify the first convolutional layer to accept 1-channel input
     model.conv1 = nn.Conv2d(

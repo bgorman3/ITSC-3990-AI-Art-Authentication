@@ -7,8 +7,26 @@ def load_data(batch_size=32):
     transform = transforms.Compose([
         transforms.Grayscale(num_output_channels=3),  # Convert grayscale to RGB
         transforms.Resize((224, 224)),  # Resize to match model input size
+        transforms.RandomRotation(10),  # Randomly rotate images by up to 10 degrees
+        transforms.RandomHorizontalFlip(),  # Randomly flip images horizontally
+        transforms.RandomAffine(0, translate=(0.1, 0.1)),  # Randomly translate images
         transforms.ToTensor(),  # Convert to tensor
     ])
+    """
+     Data Augmentation 
+
+from torchvision import transforms
+
+    transform = transforms.Compose([
+    transforms.Grayscale(num_output_channels=3),
+    transforms.Resize((224, 224)),
+    transforms.RandomRotation(10),  # Randomly rotate images by up to 10 degrees
+    transforms.RandomHorizontalFlip(),  # Randomly flip images horizontally
+    transforms.RandomAffine(0, translate=(0.1, 0.1)),  # Randomly translate images
+    transforms.ToTensor(),
+])
+    """
+   
 
     # Load the MNIST dataset with the defined transformations
     full_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)

@@ -64,3 +64,5 @@ if __name__ == "__main__":
     train_loader, val_loader = load_data()
     model = create_model()
     train_model(model, train_loader, val_loader)
+
+ 
