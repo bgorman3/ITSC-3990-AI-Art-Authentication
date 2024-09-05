@@ -1,6 +1,6 @@
 # Ignore MNIST and EMNIST datasets
-data/MNIST/
-data/EMNIST/
+Binary Classifier Test/data/MNIST/
+Binary Classifier Test/data/EMNIST/
 
-models/model.pth
+Binary Classifier Test/models/model.pth
 
