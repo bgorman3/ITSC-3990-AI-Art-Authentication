@@ -4,3 +4,5 @@ Binary Classifier Test/data/EMNIST/
 
 Binary Classifier Test/models/model.pth
 
+data/EMNIST
+models/model.pth

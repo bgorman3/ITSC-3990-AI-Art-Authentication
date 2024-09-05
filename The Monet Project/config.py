@@ -4,5 +4,10 @@ LEARNING_RATE = 0.001
 BATCH_SIZE = 32
 
 DATA_DIR = './data'
-RESULTS_PATH = './results/training_results.csv'
-MODEL_PATH = './models/monet_classifier.pth'
+RESULTS_PATH = './ModelTrainingResults/results.csv'
+MODEL_PATH = './models/monet_model.pth'
+
+
+
+
+
