@@ -1,10 +1,10 @@
-import torch # type: ignore
-from torch.utils.data import DataLoader # type: ignore
-from torchvision import datasets, transforms # type: ignore
+import torch  # type: ignore
+from torch.utils.data import DataLoader  # type: ignore
+from torchvision import datasets, transforms  # type: ignore
 from tqdm import tqdm  # type: ignore
-import matplotlib.pyplot as plt # type: ignore
-import torchvision # type: ignore
-from matplotlib.widgets import Button # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
+import torchvision  # type: ignore
+from matplotlib.widgets import Button  # type: ignore
 from utils import load_model
 from model import create_model
 import config
@@ -56,12 +56,14 @@ def test_model(model, test_loader):
     total = 0
     incorrect = 0
     
+    # Create a figure with subplots for image display, stats, and stop button
     fig = plt.figure(figsize=(10, 6))
     gs = fig.add_gridspec(2, 2)
     ax_image = fig.add_subplot(gs[:, 0])
     ax_stats = fig.add_subplot(gs[0, 1])
     ax_button = fig.add_subplot(gs[1, 1])
     
+    # Create a stop button
     btn_stop = Button(ax_button, 'Stop')
     btn_stop.on_clicked(stop)
     

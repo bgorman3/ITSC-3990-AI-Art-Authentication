@@ -8,6 +8,7 @@ from model import create_model
 from utils import ensure_dir_exists, save_to_csv, save_model
 import config
 import os
+import matplotlib.pyplot as plt  # type: ignore
 
 # Define the transformations
 transform = transforms.Compose([
@@ -46,6 +47,8 @@ def train_model(model, train_loader, val_loader, num_epochs=config.NUM_EPOCHS, c
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
+        correct_train = 0
+        total_train = 0
         
         # Wrap the train_loader with tqdm for a progress bar
         for images, labels in tqdm(train_loader, desc=f"Training Epoch {epoch+1}/{num_epochs}", unit="batch"):
@@ -56,37 +59,83 @@ def train_model(model, train_loader, val_loader, num_epochs=config.NUM_EPOCHS, c
             loss.backward()
             optimizer.step()
             running_loss += loss.item() * images.size(0)
+            _, predicted = torch.max(outputs, 1)
+            total_train += labels.size(0)
+            correct_train += (predicted == labels).sum().item()
         
         epoch_loss = running_loss / len(train_loader.dataset)
-        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}')
+        train_accuracy = correct_train / total_train
+        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}, Training Accuracy: {train_accuracy:.4f}')
 
         # Validation
         model.eval()
-        correct = 0
-        total = 0
+        correct_val = 0
+        total_val = 0
+        running_val_loss = 0.0
         
         # Wrap the val_loader with tqdm for a progress bar
         with torch.no_grad():
             for images, labels in tqdm(val_loader, desc=f"Validation Epoch {epoch+1}/{num_epochs}", unit="batch"):
                 images, labels = images.to(device), labels.to(device)
                 outputs = model(images)
+                loss = criterion(outputs, labels)
+                running_val_loss += loss.item() * images.size(0)
                 _, predicted = torch.max(outputs, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+                total_val += labels.size(0)
+                correct_val += (predicted == labels).sum().item()
         
-        accuracy = correct / total
-        print(f'Validation Accuracy: {accuracy:.4f}')
+        val_loss = running_val_loss / len(val_loader.dataset)
+        val_accuracy = correct_val / total_val
+        print(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}')
 
         # Collect results for CSV
-        results.append([epoch+1, epoch_loss, accuracy])
+        results.append([epoch+1, epoch_loss, train_accuracy, val_loss, val_accuracy])
 
     # Save results to CSV
-    save_to_csv(results, csv_filepath, headers=['Epoch', 'Training Loss', 'Validation Accuracy'])
+    save_to_csv(results, csv_filepath, headers=['Epoch', 'Training Loss', 'Training Accuracy', 'Validation Loss', 'Validation Accuracy'])
 
     # Ensure the directory exists and save the model
     ensure_dir_exists(os.path.dirname(config.MODEL_PATH))
     save_model(model, config.MODEL_PATH)
 
+def show_image(image, title, ax):
+    """Helper function to display an image with a title."""
+    ax.imshow(image.permute(1, 2, 0).cpu().numpy())
+    ax.set_title(title)
+    ax.axis('off')
+    plt.draw()
+    plt.pause(0.001)  # Pause to allow the plot to update
+
+def test_model(model, test_loader):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    model.eval()
+    correct = 0
+    total = 0
+    
+    # Create a figure with subplots for image display and stats
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    
+    with torch.no_grad():
+        for images, labels in tqdm(test_loader, desc="Testing", unit="batch"):
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+            
+            # Display each image with the prediction and whether it is correct
+            for i in range(images.size(0)):
+                image = images[i]
+                label = labels[i].item()
+                prediction = predicted[i].item()
+                title = f'Prediction: {"Monet" if prediction == 1 else "Non-Monet"}, Actual: {"Monet" if label == 1 else "Non-Monet"}, {"Correct" if prediction == label else "Incorrect"}'
+                show_image(image, title, ax)
+    
+    accuracy = correct / total
+    print(f'Test Accuracy: {accuracy:.4f}')
+
 if __name__ == "__main__":
     model = create_model()
     train_model(model, train_loader, val_loader)
+    test_model(model, test_loader)
