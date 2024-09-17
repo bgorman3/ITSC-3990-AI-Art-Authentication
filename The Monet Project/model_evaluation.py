@@ -62,7 +62,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(config.MODEL_PATH))
 
     print("Evaluating Non-Monet images...")
-    evaluate_images(model, monet_loader, "Non-Monet Images: ")  # Correct loader for Non-Monet
+    evaluate_images(model, monet_loader, ":")  # Correct loader for Non-Monet
 
     print("Evaluating Monet images...")
-    evaluate_images(model, non_monet_loader, "Monet Images: ")  # Correct loader for Monet
+    evaluate_images(model, non_monet_loader, ":")  # Correct loader for Monet
