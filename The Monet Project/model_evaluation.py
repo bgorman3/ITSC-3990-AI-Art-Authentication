@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import random
 from model import create_model
 import config
+from sklearn.metrics import precision_score, recall_score, f1_score  # Import necessary metrics
 
 # Define the transformations
 transform = transforms.Compose([
@@ -32,13 +33,16 @@ non_monet_subset = Subset(dataset, selected_non_monet_indices)
 monet_loader = DataLoader(monet_subset, batch_size=1, shuffle=False)
 non_monet_loader = DataLoader(non_monet_subset, batch_size=1, shuffle=False)
 
-def evaluate_images(model, data_loader, label):
+def evaluate_images(model, data_loader, label, true_label):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     model.eval()
 
     fig, axes = plt.subplots(4, 5, figsize=(15, 12))
     axes = axes.flatten()
+
+    all_labels = []
+    all_predictions = []
 
     with torch.no_grad():
         for i, (images, _) in enumerate(data_loader):
@@ -47,6 +51,13 @@ def evaluate_images(model, data_loader, label):
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
             prob_monet = probabilities[0][1].item()
             prob_non_monet = probabilities[0][0].item()
+
+            # Determine the predicted label
+            predicted_label = 1 if prob_monet > prob_non_monet else 0
+
+            # Collect all labels and predictions for F1 score calculation
+            all_labels.append(true_label)
+            all_predictions.append(predicted_label)
 
             # Display the image with the probability score
             ax = axes[i]
@@ -57,12 +68,21 @@ def evaluate_images(model, data_loader, label):
     plt.tight_layout()
     plt.show()
 
+    # Calculate precision, recall, and F1 score
+    precision = precision_score(all_labels, all_predictions, average='binary')
+    recall = recall_score(all_labels, all_predictions, average='binary')
+    f1 = f1_score(all_labels, all_predictions, average='binary')
+
+    print(f'{label} Precision: {precision:.4f}')
+    print(f'{label} Recall: {recall:.4f}')
+    print(f'{label} F1 Score: {f1:.4f}')
+
 if __name__ == "__main__":
     model = create_model()
     model.load_state_dict(torch.load(config.MODEL_PATH))
 
-    print("Evaluating Non-Monet images...")
-    evaluate_images(model, monet_loader, ":")  # Correct loader for Non-Monet
-
     print("Evaluating Monet images...")
-    evaluate_images(model, non_monet_loader, ":")  # Correct loader for Monet
+    evaluate_images(model, monet_loader, "Non-Monet", 0)  # Correct loader for Non-Monet
+
+    print("Evaluating non-Monet images...")
+    evaluate_images(model, non_monet_loader, "Monet", 1)  # Correct loader for Monet
