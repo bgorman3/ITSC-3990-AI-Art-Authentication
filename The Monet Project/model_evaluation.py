@@ -61,17 +61,19 @@ def evaluate_images(model, data_loader, label, true_label):
 
             # Display the image with the probability score
             ax = axes[i]
-            ax.imshow(images[0].permute(1, 2, 0).cpu().numpy())
-            ax.set_title(f'{label} Non-Monet: {prob_monet:.2f}, Monet: {prob_non_monet:.2f}')
+            img = images[0].permute(1, 2, 0).cpu().numpy()
+            img = (img - img.min()) / (img.max() - img.min())  # Normalize to [0, 1] for display
+            ax.imshow(img)
+            ax.set_title(f'{label} Non-Monet: {prob_non_monet:.2f}, Monet: {prob_monet:.2f}')
             ax.axis('off')
 
     plt.tight_layout()
     plt.show()
 
     # Calculate precision, recall, and F1 score
-    precision = precision_score(all_labels, all_predictions, average='binary')
-    recall = recall_score(all_labels, all_predictions, average='binary')
-    f1 = f1_score(all_labels, all_predictions, average='binary')
+    precision = precision_score(all_labels, all_predictions, average='binary', zero_division=1)
+    recall = recall_score(all_labels, all_predictions, average='binary', zero_division=1)
+    f1 = f1_score(all_labels, all_predictions, average='binary', zero_division=1)
 
     print(f'{label} Precision: {precision:.4f}')
     print(f'{label} Recall: {recall:.4f}')
@@ -82,7 +84,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(config.MODEL_PATH))
 
     print("Evaluating Monet images...")
-    evaluate_images(model, monet_loader, "Non-Monet", 0)  # Correct loader for Non-Monet
+    evaluate_images(model, monet_loader, "Monet", 1)  # Correct loader for Monet
 
-    print("Evaluating non-Monet images...")
-    evaluate_images(model, non_monet_loader, "Monet", 1)  # Correct loader for Monet
+    print("Evaluating Non-Monet images...")
+    evaluate_images(model, non_monet_loader, "Non-Monet", 0)  # Correct loader for Non-Monet
