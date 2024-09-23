@@ -33,7 +33,7 @@ class CustomImageDataset(Dataset):
 
 # New test datasets
 monet_test_path = 'data/monet_test'
-non_monet_test_path = 'data/non-monet_test'
+non_monet_test_path = 'data/ai_data'
 
 # Create datasets for the new test datasets
 monet_test_dataset = CustomImageDataset(image_dir=monet_test_path, transform=transform)
