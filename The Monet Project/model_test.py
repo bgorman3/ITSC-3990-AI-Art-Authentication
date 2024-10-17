@@ -33,11 +33,15 @@ class CustomImageDataset(Dataset):
 
 # New test datasets
 monet_test_path = 'data/monet_test'
-non_monet_test_path = 'data/ai_data'
+non_monet_test_path = 'data/non-monet_test'
+
 
 # Create datasets for the new test datasets
 monet_test_dataset = CustomImageDataset(image_dir=monet_test_path, transform=transform)
 non_monet_test_dataset = CustomImageDataset(image_dir=non_monet_test_path, transform=transform)
+
+# Verify the contents of the datasets
+
 
 # Randomly select 20 images from each test dataset
 selected_monet_indices = random.sample(range(len(monet_test_dataset)), 20)
@@ -64,7 +68,7 @@ def evaluate_images(model, data_loader, label):
     axes = axes.flatten()
 
     with torch.no_grad():
-        for i, (images, _) in enumerate(data_loader):
+        for i, (images, img_paths) in enumerate(data_loader):
             images = images.to(device)
             outputs = model(images)
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
@@ -79,7 +83,7 @@ def evaluate_images(model, data_loader, label):
             img = images[0].permute(1, 2, 0).cpu().numpy()
             img = (img - img.min()) / (img.max() - img.min())  # Normalize to [0, 1] for display
             ax.imshow(img)
-            ax.set_title(f'{label} Non-Monet: {prob_non_monet:.2f}, Monet: {prob_monet:.2f}')
+            ax.set_title(f'{label} Non-Monet: {prob_non_monet:.2f}, Monet: {prob_monet:.2f}\n{img_paths[0]}')
             ax.axis('off')
 
     # Hide any unused subplots
@@ -93,9 +97,27 @@ if __name__ == "__main__":
     model = create_model()
     model.load_state_dict(torch.load(config.MODEL_PATH))
 
- 
+    # Print dataset paths for debugging
+    print(f"Monet test dataset path: {monet_test_path}")
+    print(f"Non-Monet test dataset path: {non_monet_test_path}")
+
+    # Print selected indices for debugging
+    print(f"Selected Monet indices: {selected_monet_indices}")
+    print(f"Selected Non-Monet indices: {selected_non_monet_indices}")
+
+    # Print image paths for selected indices for debugging
+    print("Selected Monet image paths:")
+    for idx in selected_monet_indices:
+        print(monet_test_dataset.image_paths[idx])
+
+    print("Selected Non-Monet image paths:")
+    for idx in selected_non_monet_indices:
+        print(non_monet_test_dataset.image_paths[idx])
+
+    # Evaluate Monet test images first
     print("Evaluating Monet test images...")
     evaluate_images(model, monet_test_loader, "Monet Test Paintings")
 
+    # Evaluate Non-Monet test images next
     print("Evaluating Non-Monet test images...")
     evaluate_images(model, non_monet_test_loader, "Non-Monet Test Paintings")
