@@ -2,6 +2,8 @@ import os
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split, Dataset
 from PIL import Image
+import json
+import config
 
 class CustomImageDataset(Dataset):
     def __init__(self, image_dir, transform=None):
@@ -19,7 +21,7 @@ class CustomImageDataset(Dataset):
             image = self.transform(image)
         return image, 0  # Assuming all images are of the same class
 
-def load_data(monet_dir, non_monet_dir, batch_size, val_split=0.1, test_split=0.2):
+def load_data(monet_dir, non_monet_dir, batch_size, val_split=0.2, test_split=0.1):
     """
     Load and split the Monet dataset into training, validation, and testing sets.
     Load the non-Monet dataset for testing.
@@ -36,6 +38,7 @@ def load_data(monet_dir, non_monet_dir, batch_size, val_split=0.1, test_split=0.
     - val_loader (DataLoader): DataLoader for the validation set.
     - monet_test_loader (DataLoader): DataLoader for the Monet test set.
     - non_monet_test_loader (DataLoader): DataLoader for the non-Monet test set.
+    - test_indices (list): Indices of the test dataset for later use.
     """
     # Define the transformations with data augmentation
     transform = transforms.Compose([
@@ -60,6 +63,13 @@ def load_data(monet_dir, non_monet_dir, batch_size, val_split=0.1, test_split=0.
     # Split the Monet dataset
     train_dataset, val_dataset, monet_test_dataset = random_split(monet_dataset, [train_size, val_size, test_size])
 
+    # Save the indices of the test dataset for later use
+    test_indices = monet_test_dataset.indices
+    os.makedirs(config.TEST_DATA_DIR, exist_ok=True)
+    test_indices_path = os.path.join(config.TEST_DATA_DIR, 'test_indices.json')
+    with open(test_indices_path, 'w') as f:
+        json.dump(test_indices, f)
+
     # Load the non-Monet dataset using the custom dataset class
     non_monet_dataset = CustomImageDataset(image_dir=non_monet_dir, transform=transform)
 
@@ -69,4 +79,17 @@ def load_data(monet_dir, non_monet_dir, batch_size, val_split=0.1, test_split=0.
     monet_test_loader = DataLoader(monet_test_dataset, batch_size=batch_size, shuffle=False)
     non_monet_test_loader = DataLoader(non_monet_dataset, batch_size=batch_size, shuffle=False)
 
-    return train_loader, val_loader, monet_test_loader, non_monet_test_loader
+    return train_loader, val_loader, monet_test_loader, non_monet_test_loader, test_indices
+
+if __name__ == "__main__":
+    monet_dir = config.MONET_DATA_DIR
+    non_monet_dir = config.NON_MONET_DATA_DIR
+    batch_size = config.BATCH_SIZE
+
+    train_loader, val_loader, monet_test_loader, non_monet_test_loader, test_indices = load_data(monet_dir, non_monet_dir, batch_size)
+
+    print("Training set size:", len(train_loader.dataset))
+    print("Validation set size:", len(val_loader.dataset))
+    print("Monet test set size:", len(monet_test_loader.dataset))
+    print("Non-Monet test set size:", len(non_monet_test_loader.dataset))
+    print(f"Test indices saved to '{os.path.join(config.TEST_DATA_DIR, 'test_indices.json')}'")

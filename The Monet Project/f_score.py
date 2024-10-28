@@ -9,6 +9,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score, confusion_m
 import csv
 import os
 from PIL import Image
+import json
 
 # Define the transformations
 transform = transforms.Compose([
@@ -33,32 +34,46 @@ class CustomImageDataset(Dataset):
             image = self.transform(image)
         return image, img_path
 
-"""
+def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test_indices.json'):
+    """
+    Load the Monet and non-Monet test datasets using the saved test indices.
 
-monet_path = 'data/monet_test'
-non_monet_path = 'data/non-monet_test'
+    Parameters:
+    - monet_dir (str): Path to the Monet dataset directory.
+    - non_monet_dir (str): Path to the non-Monet dataset directory.
+    - batch_size (int): Number of samples per batch.
+    - test_indices_file (str): Name of the JSON file containing the test indices.
 
-"""
-monet_path = 'data/monet_paintings'
-non_monet_path = 'data/non-monet_paintings'
+    Returns:
+    - monet_test_loader (DataLoader): DataLoader for the Monet test set.
+    - non_monet_test_loader (DataLoader): DataLoader for the non-Monet test set.
+    """
+    # Define the transformations
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),  # Resize to match model input size
+        transforms.ToTensor(),  # Convert to tensor
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  # Normalize
+    ])
 
+    # Load the Monet dataset using the custom dataset class
+    monet_dataset = CustomImageDataset(image_dir=monet_dir, transform=transform)
 
+    # Load the test indices from the JSON file in the specified directory
+    test_indices_path = os.path.join(config.TEST_DATA_DIR, test_indices_file)
+    with open(test_indices_path, 'r') as f:
+        test_indices = json.load(f)
 
-# Create datasets for the new datasets
-monet_dataset = CustomImageDataset(image_dir=monet_path, transform=transform)
-non_monet_dataset = CustomImageDataset(image_dir=non_monet_path, transform=transform)
+    # Create a subset for the Monet test dataset using the loaded indices
+    monet_test_subset = Subset(monet_dataset, test_indices)
 
-# Randomly select 20 images from each dataset
-selected_monet_indices = random.sample(range(len(monet_dataset)), 50)
-selected_non_monet_indices = random.sample(range(len(non_monet_dataset)), 50)
+    # Load the non-Monet dataset using the custom dataset class
+    non_monet_dataset = CustomImageDataset(image_dir=non_monet_dir, transform=transform)
 
-# Create subsets for the selected images
-monet_subset = Subset(monet_dataset, selected_monet_indices)
-non_monet_subset = Subset(non_monet_dataset, selected_non_monet_indices)
+    # Create DataLoaders
+    monet_test_loader = DataLoader(monet_test_subset, batch_size=batch_size, shuffle=False)
+    non_monet_test_loader = DataLoader(non_monet_dataset, batch_size=batch_size, shuffle=False)
 
-# Create DataLoaders for the new subsets
-monet_loader = DataLoader(monet_subset, batch_size=1, shuffle=False)
-non_monet_loader = DataLoader(non_monet_subset, batch_size=1, shuffle=False)
+    return monet_test_loader, non_monet_test_loader
 
 def evaluate_images(model, data_loader, true_label):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -112,11 +127,14 @@ if __name__ == "__main__":
     model = create_model()
     model.load_state_dict(torch.load(config.MODEL_PATH))
 
+    # Load test data
+    monet_test_loader, non_monet_test_loader = load_test_data(config.MONET_DATA_DIR, config.NON_MONET_DATA_DIR, config.BATCH_SIZE)
+
     # Evaluate Monet images
-    monet_labels, monet_predictions = evaluate_images(model, monet_loader, 1)
+    monet_labels, monet_predictions = evaluate_images(model, monet_test_loader, 1)
 
     # Evaluate Non-Monet images
-    non_monet_labels, non_monet_predictions = evaluate_images(model, non_monet_loader, 0)
+    non_monet_labels, non_monet_predictions = evaluate_images(model, non_monet_test_loader, 0)
 
     # Combine labels and predictions
     all_labels = monet_labels + non_monet_labels

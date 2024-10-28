@@ -83,6 +83,11 @@ def train_model(model, train_loader, val_loader, num_epochs=config.NUM_EPOCHS, c
                 _, predicted = torch.max(outputs, 1)
                 total_val += labels.size(0)
                 correct_val += (predicted == labels).sum().item()
+
+                print(f"Batch Labels: {labels.cpu().numpy()}")
+                print(f"Batch Predictions: {predicted.cpu().numpy()}")
+                print(f"Batch Loss: {loss.item()}")
+
         
         val_loss = running_val_loss / len(val_loader.dataset)
         val_accuracy = correct_val / total_val
