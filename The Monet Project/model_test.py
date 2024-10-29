@@ -32,8 +32,8 @@ class CustomImageDataset(Dataset):
         return image, img_path
 
 # New test datasets
-monet_test_path = 'data/monet_test'
-non_monet_test_path = 'data/ai_data'
+monet_test_path = 'data/large_monet_dataset'
+non_monet_test_path = 'data/non-monet_test'
 
 
 # Create datasets for the new test datasets

@@ -1,28 +1,19 @@
-import torch
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Dataset, Subset
-import matplotlib.pyplot as plt
-import random
-from model import create_model
-import config
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, accuracy_score
-import csv
 import os
+from torchvision import transforms
+from torch.utils.data import DataLoader, Dataset, Subset
 from PIL import Image
 import json
-
-# Define the transformations
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),  # Resize to match model input size
-    transforms.ToTensor(),  # Convert to tensor
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  # Normalize
-])
+import torch
+import config
+from sklearn.metrics import f1_score, confusion_matrix, accuracy_score, precision_score, recall_score
 
 class CustomImageDataset(Dataset):
-    def __init__(self, image_dir, transform=None):
+    def __init__(self, image_dir, label, transform=None):
         self.image_dir = image_dir
         self.transform = transform
-        self.image_paths = [os.path.join(image_dir, img) for img in os.listdir(image_dir) if img.endswith(('jpg', 'jpeg', 'png'))]
+        self.label = label  # 1 for Monet, 0 for non-Monet
+        self.image_paths = [os.path.join(image_dir, img) for img in os.listdir(image_dir) 
+                          if img.endswith(('jpg', 'jpeg', 'png'))]
 
     def __len__(self):
         return len(self.image_paths)
@@ -32,7 +23,7 @@ class CustomImageDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
         if self.transform:
             image = self.transform(image)
-        return image, img_path
+        return image, self.label
 
 def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test_indices.json'):
     """
@@ -56,7 +47,7 @@ def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test
     ])
 
     # Load the Monet dataset using the custom dataset class
-    monet_dataset = CustomImageDataset(image_dir=monet_dir, transform=transform)
+    monet_dataset = CustomImageDataset(image_dir=monet_dir, label=1, transform=transform)
 
     # Load the test indices from the JSON file in the specified directory
     test_indices_path = os.path.join(config.TEST_DATA_DIR, test_indices_file)
@@ -67,7 +58,7 @@ def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test
     monet_test_subset = Subset(monet_dataset, test_indices)
 
     # Load the non-Monet dataset using the custom dataset class
-    non_monet_dataset = CustomImageDataset(image_dir=non_monet_dir, transform=transform)
+    non_monet_dataset = CustomImageDataset(image_dir=non_monet_dir, label=0, transform=transform)
 
     # Create DataLoaders
     monet_test_loader = DataLoader(monet_test_subset, batch_size=batch_size, shuffle=False)
@@ -75,86 +66,67 @@ def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test
 
     return monet_test_loader, non_monet_test_loader
 
-def evaluate_images(model, data_loader, true_label):
+def evaluate_model(model, test_loader):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     model.eval()
 
-    all_labels = []
     all_predictions = []
+    all_labels = []
 
     with torch.no_grad():
-        for images, _ in data_loader:
+        for images, labels in test_loader:
             images = images.to(device)
             outputs = model(images)
-            probabilities = torch.nn.functional.softmax(outputs, dim=1)
-            prob_monet = probabilities[0][1].item()
-            prob_non_monet = probabilities[0][0].item()
-
-            # Determine the predicted label
-            predicted_label = 1 if prob_non_monet > prob_monet else 0
-
-            # Collect all labels and predictions for metric calculation
-            all_labels.append(true_label)
-            all_predictions.append(predicted_label)
-
-            # Debug prints
-            print(f"True Label: {true_label}, Predicted Label: {predicted_label}, Prob Monet: {prob_monet:.2f}, Prob Non-Monet: {prob_non_monet:.2f}")
-
-    return all_labels, all_predictions
-
-def calculate_metrics(true_labels, predictions):
-    precision = precision_score(true_labels, predictions, pos_label=1, zero_division=1)
-    recall = recall_score(true_labels, predictions, pos_label=1, zero_division=1)
-    f1 = f1_score(true_labels, predictions, pos_label=1, zero_division=1)
-    accuracy = accuracy_score(true_labels, predictions)
-    
-    # Ensure the confusion matrix has the correct shape
-    tn, fp, fn, tp = confusion_matrix(true_labels, predictions, labels=[0, 1]).ravel()
-    
-    # Debug prints for confusion matrix
-    print(f"Confusion Matrix: TN: {tn}, FP: {fp}, FN: {fn}, TP: {tp}")
-    
-    return precision, recall, f1, accuracy, tn, fp, fn, tp
-
-def write_results_to_csv(results, filename='results.csv'):
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Category', 'Precision', 'Recall', 'F1 Score', 'Accuracy', 'TN', 'FP', 'FN', 'TP'])
-        writer.writerow(results)
-
-if __name__ == "__main__":
-    model = create_model()
-    model.load_state_dict(torch.load(config.MODEL_PATH))
-
-    # Load test data
-    monet_test_loader, non_monet_test_loader = load_test_data(config.MONET_DATA_DIR, config.NON_MONET_DATA_DIR, config.BATCH_SIZE)
-
-    # Evaluate Monet images
-    monet_labels, monet_predictions = evaluate_images(model, monet_test_loader, 1)
-
-    # Evaluate Non-Monet images
-    non_monet_labels, non_monet_predictions = evaluate_images(model, non_monet_test_loader, 0)
-
-    # Combine labels and predictions
-    all_labels = monet_labels + non_monet_labels
-    all_predictions = monet_predictions + non_monet_predictions
+            _, predicted = torch.max(outputs, 1)
+            all_predictions.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.numpy())
 
     # Calculate metrics
-    precision, recall, f1, accuracy, tn, fp, fn, tp = calculate_metrics(all_labels, all_predictions)
+    accuracy = accuracy_score(all_labels, all_predictions)
+    precision = precision_score(all_labels, all_predictions, pos_label=1, zero_division=1)
+    recall = recall_score(all_labels, all_predictions, pos_label=1, zero_division=1)
+    f1 = f1_score(all_labels, all_predictions, pos_label=1, zero_division=1)
+    cm = confusion_matrix(all_labels, all_predictions)
 
-    # Prepare results
-    results = ['Overall', precision, recall, f1, accuracy, tn, fp, fn, tp]
+    return {
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'confusion_matrix': cm
+    }
 
-    # Write results to CSV
-    write_results_to_csv(results)
+if __name__ == "__main__":
+    from modelTrainingOneClass import MonetOneClassClassifier
 
-    # Print results to console
-    print("Overall Results:")
-    print(f"Precision: {precision:.2f}")
-    print(f"Recall: {recall:.2f}")
-    print(f"F1 Score: {f1:.2f}")
-    print(f"Accuracy: {accuracy:.2f}")
-    print(f"TN: {tn}, FP: {fp}, FN: {fn}, TP: {tp}")
+    # Load the test data
+    monet_test_loader, non_monet_test_loader = load_test_data(
+        monet_dir=config.MONET_DATA_DIR,
+        non_monet_dir=config.NON_MONET_DATA_DIR,
+        batch_size=config.BATCH_SIZE
+    )
 
-    print("Results written to results.csv")
+    # Initialize the model
+    model = MonetOneClassClassifier()
+    model.load_state_dict(torch.load(config.MODEL_PATH))
+
+    # Evaluate the model on Monet test set
+    monet_metrics = evaluate_model(model, monet_test_loader)
+    print("\nMonet Test Set Performance:")
+    print(f"Accuracy: {monet_metrics['accuracy']:.4f}")
+    print(f"Precision: {monet_metrics['precision']:.4f}")
+    print(f"Recall: {monet_metrics['recall']:.4f}")
+    print(f"F1 Score: {monet_metrics['f1']:.4f}")
+    print("\nConfusion Matrix:")
+    print(monet_metrics['confusion_matrix'])
+
+    # Evaluate the model on non-Monet test set
+    non_monet_metrics = evaluate_model(model, non_monet_test_loader)
+    print("\nNon-Monet Test Set Performance:")
+    print(f"Accuracy: {non_monet_metrics['accuracy']:.4f}")
+    print(f"Precision: {non_monet_metrics['precision']:.4f}")
+    print(f"Recall: {non_monet_metrics['recall']:.4f}")
+    print(f"F1 Score: {non_monet_metrics['f1']:.4f}")
+    print("\nConfusion Matrix:")
+    print(non_monet_metrics['confusion_matrix'])
