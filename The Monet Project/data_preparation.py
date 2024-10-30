@@ -26,27 +26,7 @@ class LabeledImageDataset(Dataset):
             image = self.transform(image)
         return image, self.label
 
-class ShuffledConcatDataset(Dataset):
-    def __init__(self, *datasets):
-        self.datasets = datasets
-        self.lengths = [len(d) for d in datasets]
-        self.total_length = sum(self.lengths)
-        
-        # Create a shuffled index mapping
-        all_indices = []
-        for dataset_idx, length in enumerate(self.lengths):
-            all_indices.extend([(dataset_idx, i) for i in range(length)])
-        random.shuffle(all_indices)
-        self.shuffled_indices = all_indices
-
-    def __len__(self):
-        return self.total_length
-
-    def __getitem__(self, idx):
-        dataset_idx, item_idx = self.shuffled_indices[idx]
-        return self.datasets[dataset_idx][item_idx]
-
-def load_balanced_data(monet_dir, non_monet_dir, batch_size, val_split=0.2, test_split=0.1, outlier_proportion=0.3):
+def load_monet_data(monet_dir, batch_size, val_split=0.2, test_split=0.1):
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.RandomRotation(30),
@@ -58,21 +38,10 @@ def load_balanced_data(monet_dir, non_monet_dir, batch_size, val_split=0.2, test
     ])
 
     monet_dataset = LabeledImageDataset(monet_dir, label=1, transform=transform)
-    non_monet_dataset = LabeledImageDataset(non_monet_dir, label=0, transform=transform)
 
     monet_size = len(monet_dataset)
-    non_monet_size = len(non_monet_dataset)
 
     print(f"Monet dataset size: {monet_size}")
-    print(f"Non-Monet dataset size: {non_monet_size}")
-
-    balanced_size = min(int(outlier_proportion * monet_size), non_monet_size)
-    non_monet_indices = random.sample(range(non_monet_size), balanced_size)
-    non_monet_train_indices = non_monet_indices[:int(0.8 * balanced_size)]
-    non_monet_val_indices = non_monet_indices[int(0.8 * balanced_size):]
-
-    non_monet_train_dataset = Subset(non_monet_dataset, non_monet_train_indices)
-    non_monet_val_dataset = Subset(non_monet_dataset, non_monet_val_indices)
 
     test_size = int(test_split * monet_size)
     remaining_size = monet_size - test_size
@@ -96,23 +65,20 @@ def load_balanced_data(monet_dir, non_monet_dir, batch_size, val_split=0.2, test
         generator=torch.Generator().manual_seed(42)
     )
 
-    combined_train_dataset = ShuffledConcatDataset(monet_train_dataset, non_monet_train_dataset)
-    combined_val_dataset = ShuffledConcatDataset(monet_val_dataset, non_monet_val_dataset)
-    
-    print(f"Training dataset size (Monet + Non-Monet): {len(combined_train_dataset)}")
-    print(f"Validation dataset size (Monet + Non-Monet): {len(combined_val_dataset)}")
+    print(f"Training dataset size (Monet): {len(monet_train_dataset)}")
+    print(f"Validation dataset size (Monet): {len(monet_val_dataset)}")
     print(f"Test dataset size (Monet): {len(monet_test_dataset)}")
 
-    # Verify labels in the combined training dataset
-    print("Sample labels from the combined training dataset:")
+    # Verify labels in the training dataset
+    print("Sample labels from the training dataset:")
     for i in range(10):
-        _, label = combined_train_dataset[i]
+        _, label = monet_train_dataset[i]
         print(f"Sample {i}: Label {label}")
 
-    # Verify labels in the combined validation dataset
-    print("Sample labels from the combined validation dataset:")
+    # Verify labels in the validation dataset
+    print("Sample labels from the validation dataset:")
     for i in range(10):
-        _, label = combined_val_dataset[i]
+        _, label = monet_val_dataset[i]
         print(f"Sample {i}: Label {label}")
 
     # Verify labels in the test dataset
@@ -127,16 +93,15 @@ def load_balanced_data(monet_dir, non_monet_dir, batch_size, val_split=0.2, test
     with open(test_indices_path, 'w') as f:
         json.dump(test_indices, f)
 
-    train_loader = DataLoader(combined_train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(combined_val_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(monet_train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(monet_val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(monet_test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
 
 if __name__ == "__main__":
-    train_loader, val_loader, test_loader = load_balanced_data(
+    train_loader, val_loader, test_loader = load_monet_data(
         monet_dir=config.MONET_DATA_DIR,
-        non_monet_dir=config.NON_MONET_DATA_DIR,
         batch_size=config.BATCH_SIZE
     )
     print("Data loaders created successfully.")

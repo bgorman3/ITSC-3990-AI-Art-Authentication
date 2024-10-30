@@ -5,7 +5,7 @@ from PIL import Image
 import json
 import torch
 import config
-from sklearn.metrics import f1_score, confusion_matrix, accuracy_score, precision_score, recall_score
+from sklearn.metrics import f1_score, confusion_matrix, precision_score, recall_score
 
 class CustomImageDataset(Dataset):
     def __init__(self, image_dir, label, transform=None):
@@ -68,8 +68,8 @@ def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test
 
 def evaluate_model(model, test_loader):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-    model.eval()
+    model.to_device(device)
+    model.model.eval()
 
     all_predictions = []
     all_labels = []
@@ -77,17 +77,20 @@ def evaluate_model(model, test_loader):
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs, 1)
+            outputs = model.model(images)
+            predicted = (outputs > 0.5).float()  # Convert probabilities to binary predictions
             all_predictions.extend(predicted.cpu().numpy())
             all_labels.extend(labels.numpy())
 
+    # Calculate confusion matrix
+    cm = confusion_matrix(all_labels, all_predictions)
+    tn, fp, fn, tp = cm.ravel()
+
     # Calculate metrics
-    accuracy = accuracy_score(all_labels, all_predictions)
+    accuracy = (tp + tn) / (tp + tn + fp + fn)
     precision = precision_score(all_labels, all_predictions, pos_label=1, zero_division=1)
     recall = recall_score(all_labels, all_predictions, pos_label=1, zero_division=1)
     f1 = f1_score(all_labels, all_predictions, pos_label=1, zero_division=1)
-    cm = confusion_matrix(all_labels, all_predictions)
 
     return {
         'accuracy': accuracy,
@@ -109,7 +112,7 @@ if __name__ == "__main__":
 
     # Initialize the model
     model = MonetOneClassClassifier()
-    model.load_state_dict(torch.load(config.MODEL_PATH))
+    model.load_model(config.MODEL_PATH)
 
     # Evaluate the model on Monet test set
     monet_metrics = evaluate_model(model, monet_test_loader)

@@ -44,14 +44,11 @@ def print_confusion_matrix_with_labels(cm):
     Print confusion matrix with clear labels for one-class classification
     
     Confusion Matrix Structure:
-    [TN  FP]    [non-Monet predicted correctly    non-Monet predicted as Monet]
     [FN  TP]    [Monet predicted as non-Monet     Monet predicted correctly]
     """
     print("\nConfusion Matrix Breakdown:")
-    print(f"True Negatives (non-Monet correctly identified): {cm[0][0]}")
-    print(f"False Positives (non-Monet wrongly identified as Monet): {cm[0][1]}")
-    print(f"False Negatives (Monet wrongly identified as non-Monet): {cm[1][0]}")
-    print(f"True Positives (Monet correctly identified): {cm[1][1]}")
+    print(f"False Negatives (Monet wrongly identified as non-Monet): {cm[0][0]}")
+    print(f"True Positives (Monet correctly identified): {cm[0][1]}")
 
 class MonetOneClassClassifier:
     def __init__(self, learning_rate=config.LEARNING_RATE):  # Use learning rate from config
@@ -62,14 +59,15 @@ class MonetOneClassClassifier:
         num_ftrs = self.model.fc.in_features
         self.model.fc = nn.Sequential(
             nn.Dropout(0.3),  # Light dropout to prevent overfitting
-            nn.Linear(num_ftrs, 2)
+            nn.Linear(num_ftrs, 1),  # Single output for binary classification
+            nn.Sigmoid()  # Sigmoid activation for binary classification
         )
         
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         
-        # Standard CrossEntropyLoss without class weights to maintain class imbalance
-        self.criterion = nn.CrossEntropyLoss()
+        # Binary Cross-Entropy Loss for one-class classification
+        self.criterion = nn.BCELoss()
         
         # Basic Adam optimizer without weight decay to allow focus on Monet features
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
@@ -90,7 +88,7 @@ class MonetOneClassClassifier:
         
         for images, batch_labels in tqdm(train_loader, desc="Training"):
             images = images.to(self.device)
-            batch_labels = batch_labels.to(self.device)
+            batch_labels = batch_labels.to(self.device).float().unsqueeze(1)  # Ensure labels are float and match output shape
             
             self.optimizer.zero_grad()
             outputs = self.model(images)
@@ -100,7 +98,7 @@ class MonetOneClassClassifier:
             self.optimizer.step()
             
             running_loss += loss.item() * images.size(0)
-            _, predicted = torch.max(outputs, 1)
+            predicted = (outputs > 0.5).float()  # Convert probabilities to binary predictions
             predictions.extend(predicted.cpu().numpy())
             labels.extend(batch_labels.cpu().numpy())
         
@@ -108,7 +106,7 @@ class MonetOneClassClassifier:
         epoch_f1 = f1_score(labels, predictions, pos_label=1)
         epoch_acc = np.mean(np.array(predictions) == np.array(labels))
         
-        cm = confusion_matrix(labels, predictions)
+        cm = confusion_matrix(labels, predictions, labels=[0, 1])
         print("\nTraining Confusion Matrix:")
         print_confusion_matrix_with_labels(cm)
         
@@ -123,13 +121,13 @@ class MonetOneClassClassifier:
         with torch.no_grad():
             for images, batch_labels in tqdm(val_loader, desc="Validation"):
                 images = images.to(self.device)
-                batch_labels = batch_labels.to(self.device)
+                batch_labels = batch_labels.to(self.device).float().unsqueeze(1)  # Ensure labels are float and match output shape
                 
                 outputs = self.model(images)
                 loss = self.criterion(outputs, batch_labels)
                 
                 running_loss += loss.item() * images.size(0)
-                _, predicted = torch.max(outputs, 1)
+                predicted = (outputs > 0.5).float()  # Convert probabilities to binary predictions
                 predictions.extend(predicted.cpu().numpy())
                 labels.extend(batch_labels.cpu().numpy())
         
@@ -137,7 +135,7 @@ class MonetOneClassClassifier:
         val_f1 = f1_score(labels, predictions, pos_label=1)
         val_acc = np.mean(np.array(predictions) == np.array(labels))
         
-        cm = confusion_matrix(labels, predictions)
+        cm = confusion_matrix(labels, predictions, labels=[0, 1])
         print("\nValidation Confusion Matrix:")
         print_confusion_matrix_with_labels(cm)
         
@@ -194,13 +192,18 @@ class MonetOneClassClassifier:
         plot_training_metrics(results, save_dir)
         return results
 
+    def load_model(self, model_path):
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+
+    def to_device(self, device):
+        self.model.to(device)
+
 if __name__ == "__main__":
-    from data_preparation import load_balanced_data
+    from data_preparation import load_monet_data
     
-    # Load the balanced data
-    train_loader, val_loader, _ = load_balanced_data(
+    # Load the Monet data
+    train_loader, val_loader, _ = load_monet_data(
         monet_dir=config.MONET_DATA_DIR,
-        non_monet_dir=config.NON_MONET_DATA_DIR,
         batch_size=config.BATCH_SIZE
     )
     
