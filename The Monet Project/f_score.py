@@ -1,11 +1,12 @@
 import os
 from torchvision import transforms
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset, ConcatDataset, Subset
 from PIL import Image
 import json
 import torch
 import config
 from sklearn.metrics import f1_score, confusion_matrix, precision_score, recall_score
+import csv
 
 class CustomImageDataset(Dataset):
     def __init__(self, image_dir, label, transform=None):
@@ -25,9 +26,9 @@ class CustomImageDataset(Dataset):
             image = self.transform(image)
         return image, self.label
 
-def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test_indices.json'):
+def load_combined_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test_indices.json'):
     """
-    Load the Monet and non-Monet test datasets using the saved test indices.
+    Load the combined Monet and non-Monet test datasets using the saved test indices.
 
     Parameters:
     - monet_dir (str): Path to the Monet dataset directory.
@@ -36,8 +37,7 @@ def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test
     - test_indices_file (str): Name of the JSON file containing the test indices.
 
     Returns:
-    - monet_test_loader (DataLoader): DataLoader for the Monet test set.
-    - non_monet_test_loader (DataLoader): DataLoader for the non-Monet test set.
+    - combined_test_loader (DataLoader): DataLoader for the combined test set.
     """
     # Define the transformations
     transform = transforms.Compose([
@@ -60,30 +60,37 @@ def load_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test
     # Load the non-Monet dataset using the custom dataset class
     non_monet_dataset = CustomImageDataset(image_dir=non_monet_dir, label=0, transform=transform)
 
-    # Create DataLoaders
-    monet_test_loader = DataLoader(monet_test_subset, batch_size=batch_size, shuffle=False)
-    non_monet_test_loader = DataLoader(non_monet_dataset, batch_size=batch_size, shuffle=False)
+    # Combine the Monet and non-Monet test datasets
+    combined_dataset = ConcatDataset([monet_test_subset, non_monet_dataset])
 
-    return monet_test_loader, non_monet_test_loader
+    # Create DataLoader
+    combined_test_loader = DataLoader(combined_dataset, batch_size=batch_size, shuffle=False)
 
-def evaluate_model(model, test_loader):
+    return combined_test_loader
+
+def evaluate_model(model, test_loader, threshold=0.5):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to_device(device)
     model.model.eval()
 
     all_predictions = []
     all_labels = []
+    prob_monet = []
+    prob_non_monet = []
 
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
             outputs = model.model(images)
-            predicted = (outputs > 0.5).float()  # Convert probabilities to binary predictions
-            all_predictions.extend(predicted.cpu().numpy())
+            probabilities = torch.sigmoid(outputs).cpu().numpy()
+            predicted = (probabilities > threshold).astype(int)  # Convert probabilities to binary predictions
+            all_predictions.extend(predicted)
             all_labels.extend(labels.numpy())
+            prob_monet.extend(probabilities[:, 0])
+            prob_non_monet.extend(1 - probabilities[:, 0])
 
-    # Calculate confusion matrix
-    cm = confusion_matrix(all_labels, all_predictions)
+    # Calculate confusion matrix with specified labels
+    cm = confusion_matrix(all_labels, all_predictions, labels=[0, 1])
     tn, fp, fn, tp = cm.ravel()
 
     # Calculate metrics
@@ -97,39 +104,49 @@ def evaluate_model(model, test_loader):
         'precision': precision,
         'recall': recall,
         'f1': f1,
-        'confusion_matrix': cm
+        'confusion_matrix': cm,
+        'prob_monet': prob_monet,
+        'prob_non_monet': prob_non_monet
     }
+
+def save_results_to_csv(results, filepath):
+    headers = ['Accuracy', 'Precision', 'Recall', 'F1 Score', 'Confusion Matrix']
+    with open(filepath, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(headers)
+        writer.writerow(results)
 
 if __name__ == "__main__":
     from modelTrainingOneClass import MonetOneClassClassifier
 
-    # Load the test data
-    monet_test_loader, non_monet_test_loader = load_test_data(
+    # Load the combined test data
+    combined_test_loader = load_combined_test_data(
         monet_dir=config.MONET_DATA_DIR,
-        non_monet_dir=config.NON_MONET_DATA_DIR,
-        batch_size=config.BATCH_SIZE
+        non_monet_dir=config.NON_MONET_TEST_DIR,  # Use the new directory for non-Monet test data
+        batch_size=config.BATCH_SIZE,
+        test_indices_file='test_indices.json'
     )
 
     # Initialize the model
     model = MonetOneClassClassifier()
     model.load_model(config.MODEL_PATH)
 
-    # Evaluate the model on Monet test set
-    monet_metrics = evaluate_model(model, monet_test_loader)
-    print("\nMonet Test Set Performance:")
-    print(f"Accuracy: {monet_metrics['accuracy']:.4f}")
-    print(f"Precision: {monet_metrics['precision']:.4f}")
-    print(f"Recall: {monet_metrics['recall']:.4f}")
-    print(f"F1 Score: {monet_metrics['f1']:.4f}")
+    # Evaluate the model on the combined test set with adjustable threshold
+    combined_metrics = evaluate_model(model, combined_test_loader, threshold=0.5)
+    print("\nCombined Test Set Performance:")
+    print(f"Accuracy: {combined_metrics['accuracy']:.4f}")
+    print(f"Precision: {combined_metrics['precision']:.4f}")
+    print(f"Recall: {combined_metrics['recall']:.4f}")
+    print(f"F1 Score: {combined_metrics['f1']:.4f}")
     print("\nConfusion Matrix:")
-    print(monet_metrics['confusion_matrix'])
+    print(combined_metrics['confusion_matrix'])
 
-    # Evaluate the model on non-Monet test set
-    non_monet_metrics = evaluate_model(model, non_monet_test_loader)
-    print("\nNon-Monet Test Set Performance:")
-    print(f"Accuracy: {non_monet_metrics['accuracy']:.4f}")
-    print(f"Precision: {non_monet_metrics['precision']:.4f}")
-    print(f"Recall: {non_monet_metrics['recall']:.4f}")
-    print(f"F1 Score: {non_monet_metrics['f1']:.4f}")
-    print("\nConfusion Matrix:")
-    print(non_monet_metrics['confusion_matrix'])
+    # Save results to CSV
+    results = [
+        combined_metrics['accuracy'],
+        combined_metrics['precision'],
+        combined_metrics['recall'],
+        combined_metrics['f1'],
+        combined_metrics['confusion_matrix'].tolist()  # Convert numpy array to list for CSV
+    ]
+    save_results_to_csv(results, config.F_SCORE_RESULTS_PATH)
