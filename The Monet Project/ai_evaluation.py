@@ -1,8 +1,7 @@
 import os
 from torchvision import transforms
-from torch.utils.data import DataLoader, Dataset, Subset, ConcatDataset
+from torch.utils.data import DataLoader, Dataset
 from PIL import Image
-import json
 import torch
 import config
 from sklearn.metrics import f1_score, confusion_matrix, precision_score, recall_score, accuracy_score
@@ -12,9 +11,9 @@ class CustomImageDataset(Dataset):
     def __init__(self, image_dir, label, transform=None):
         self.image_dir = image_dir
         self.transform = transform
-        self.label = label  # 1 for Monet, 0 for non-Monet
+        self.label = label  # 0 for non-Monet
         self.image_paths = [os.path.join(image_dir, img) for img in os.listdir(image_dir) 
-                          if img.endswith(('jpg', 'jpeg', 'png'))]
+                            if img.endswith(('jpg', 'jpeg', 'png'))]
 
     def __len__(self):
         return len(self.image_paths)
@@ -26,63 +25,38 @@ class CustomImageDataset(Dataset):
             image = self.transform(image)
         return image, self.label
 
-def load_combined_test_data(monet_dir, non_monet_dir, batch_size, test_indices_file='test_indices.json'):
+def load_ai_test_data(non_monet_dir, batch_size):
     """
-    Load the combined Monet and non-Monet test datasets using the saved test indices.
+    Load the non-Monet test dataset.
 
     Parameters:
-    - monet_dir (str): Path to the Monet dataset directory.
     - non_monet_dir (str): Path to the non-Monet dataset directory.
     - batch_size (int): Number of samples per batch.
-    - test_indices_file (str): Name of the JSON file containing the test indices.
 
     Returns:
-    - combined_test_loader (DataLoader): DataLoader for the combined test set.
+    - ai_test_loader (DataLoader): DataLoader for the non-Monet test set.
     """
     # Define the transformations
     transform = transforms.Compose([
         transforms.Resize((224, 224)),  # Resize to match model input size
+        transforms.RandomRotation(30),  # Randomly rotate the image
+        transforms.RandomResizedCrop(224),  # Randomly crop and resize the image
+        transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),  # Apply color jitter
+        transforms.RandomHorizontalFlip(),  # Randomly flip the image horizontally
         transforms.ToTensor(),  # Convert to tensor
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  # Normalize
     ])
 
-    # Load the Monet dataset using the custom dataset class
-    monet_dataset = CustomImageDataset(image_dir=monet_dir, label=1, transform=transform)
-
     # Load the non-Monet dataset using the custom dataset class
     non_monet_dataset = CustomImageDataset(image_dir=non_monet_dir, label=0, transform=transform)
 
-    # Print dataset lengths for debugging
-    print(f"Monet dataset length: {len(monet_dataset)}")
+    # Print dataset length for debugging
     print(f"Non-Monet dataset length: {len(non_monet_dataset)}")
 
-    # Load the test indices from the JSON file in the specified directory
-    test_indices_path = os.path.join(config.TEST_DATA_DIR, test_indices_file)
-    with open(test_indices_path, 'r') as f:
-        test_indices = json.load(f)
-
-    # Create subsets for the Monet and non-Monet test datasets using the loaded indices
-    monet_test_indices = test_indices['monet_test_indices']
-    non_monet_test_indices = test_indices['non_monet_test_indices']
-
-    # Print indices for debugging
-    print(f"Monet test indices: {monet_test_indices}")
-    print(f"Non-Monet test indices: {non_monet_test_indices}")
-
-    # Ensure indices are within the dataset length
-    assert all(idx < len(monet_dataset) for idx in monet_test_indices), "Monet test indices out of range"
-    assert all(idx < len(non_monet_dataset) for idx in non_monet_test_indices), "Non-Monet test indices out of range"
-
-    monet_test_subset = Subset(monet_dataset, monet_test_indices)
-    non_monet_test_subset = Subset(non_monet_dataset, non_monet_test_indices)
-
-    # Combine the Monet and non-Monet test datasets
-    combined_dataset = ConcatDataset([monet_test_subset, non_monet_test_subset])
-
     # Create DataLoader
-    combined_test_loader = DataLoader(combined_dataset, batch_size=batch_size, shuffle=False)
+    ai_test_loader = DataLoader(non_monet_dataset, batch_size=batch_size, shuffle=False)
 
-    return combined_test_loader
+    return ai_test_loader
 
 def evaluate_model(model, test_loader, threshold=0.5):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -91,7 +65,6 @@ def evaluate_model(model, test_loader, threshold=0.5):
 
     all_predictions = []
     all_labels = []
-    prob_monet = []
     prob_non_monet = []
 
     with torch.no_grad():
@@ -100,10 +73,9 @@ def evaluate_model(model, test_loader, threshold=0.5):
             outputs = model.model(images)
             probabilities = torch.sigmoid(outputs).cpu().numpy()
             predicted = (probabilities > threshold).astype(int)  # Convert probabilities to binary predictions
-            all_predictions.extend(predicted)
+            all_predictions.extend(predicted.flatten())
             all_labels.extend(labels.numpy())
-            prob_monet.extend(probabilities[:, 0])
-            prob_non_monet.extend(1 - probabilities[:, 0])
+            prob_non_monet.extend(probabilities[:, 0])
 
     # Print number of samples evaluated
     print(f"Number of samples evaluated: {len(all_labels)}")
@@ -124,7 +96,6 @@ def evaluate_model(model, test_loader, threshold=0.5):
         'recall': recall,
         'f1': f1,
         'confusion_matrix': cm,
-        'prob_monet': prob_monet,
         'prob_non_monet': prob_non_monet
     }
 
@@ -138,34 +109,32 @@ def save_results_to_csv(results, filepath):
 if __name__ == "__main__":
     from modelTraining import MonetNonMonetClassifier
 
-    # Load the combined test data
-    combined_test_loader = load_combined_test_data(
-        monet_dir=config.MONET_DATA_DIR,
-        non_monet_dir=config.NON_MONET_DATA_DIR,  # Use the correct directory for non-Monet test data
-        batch_size=config.BATCH_SIZE,
-        test_indices_file='test_indices.json'
+    # Load the AI test data
+    ai_test_loader = load_ai_test_data(
+        non_monet_dir=config.NON_MONET_TEST_DIR,
+        batch_size=config.BATCH_SIZE
     )
 
     # Initialize the model
     model = MonetNonMonetClassifier()
     model.load_model(config.MODEL_PATH)
 
-    # Evaluate the model on the combined test set with adjustable threshold
-    combined_metrics = evaluate_model(model, combined_test_loader, threshold=0.5)
-    print("\nCombined Test Set Performance:")
-    print(f"Accuracy: {combined_metrics['accuracy']:.4f}")
-    print(f"Precision: {combined_metrics['precision']:.4f}")
-    print(f"Recall: {combined_metrics['recall']:.4f}")
-    print(f"F1 Score: {combined_metrics['f1']:.4f}")
+    # Evaluate the model on the AI test set with adjustable threshold
+    ai_metrics = evaluate_model(model, ai_test_loader, threshold=0.5)
+    print("\nAI Test Set Performance:")
+    print(f"Accuracy: {ai_metrics['accuracy']:.4f}")
+    print(f"Precision: {ai_metrics['precision']:.4f}")
+    print(f"Recall: {ai_metrics['recall']:.4f}")
+    print(f"F1 Score: {ai_metrics['f1']:.4f}")
     print("\nConfusion Matrix:")
-    print(combined_metrics['confusion_matrix'])
+    print(ai_metrics['confusion_matrix'])
 
     # Save results to CSV
     results = [
-        combined_metrics['accuracy'],
-        combined_metrics['precision'],
-        combined_metrics['recall'],
-        combined_metrics['f1'],
-        combined_metrics['confusion_matrix'].tolist()  # Convert numpy array to list for CSV
+        ai_metrics['accuracy'],
+        ai_metrics['precision'],
+        ai_metrics['recall'],
+        ai_metrics['f1'],
+        ai_metrics['confusion_matrix'].tolist()  # Convert numpy array to list for CSV
     ]
     save_results_to_csv(results, config.F_SCORE_RESULTS_PATH)

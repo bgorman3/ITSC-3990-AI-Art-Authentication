@@ -1,188 +1,212 @@
 import torch
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Dataset, Subset
-import matplotlib.pyplot as plt
-import random
-from model import create_model
-import config
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, accuracy_score
-import csv
+import torch.optim as optim
+import torch.nn as nn
+from tqdm import tqdm
+from torchvision import models
+import numpy as np
+from sklearn.metrics import f1_score, confusion_matrix, precision_score, recall_score, accuracy_score
 import os
-from PIL import Image
-import torch.optim as optim  # type: ignore
-import torch.nn as nn  # type: ignore
-from tqdm import tqdm  # type: ignore
-from utils import ensure_dir_exists, save_to_csv, save_model
+import csv
+import matplotlib.pyplot as plt
+import config
 from data_preparation import load_data  # Import the load_data function
 
-# Load the data
-train_loader, val_loader, monet_test_loader, non_monet_test_loader = load_data(
-    batch_size=config.BATCH_SIZE,
-    val_split=0.2,
-    test_split=0.1
-)
+def plot_training_metrics(metrics, save_dir):
+    epochs = [x[0] for x in metrics]
+    train_losses = [x[1] for x in metrics]
+    train_accuracies = [x[2] for x in metrics]
+    val_losses = [x[3] for x in metrics]
+    val_accuracies = [x[4] for x in metrics]
 
-def train_model(model, train_loader, val_loader, num_epochs=config.NUM_EPOCHS, csv_filepath=config.MODEL_TRAINING_RESULTS_PATH):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  # Define the device variable
-    # Calculate class weights
-    class_counts = [len(train_loader.dataset), len(val_loader.dataset)]
-    total_samples = sum(class_counts)
-    class_weights = [total_samples / class_count for class_count in class_counts]
-    class_weights = torch.tensor(class_weights, dtype=torch.float).to(device)
+    plt.figure(figsize=(12, 5))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_losses, label='Training Loss')
+    plt.plot(epochs, val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title('Training and Validation Loss')
 
-    # Define the loss function with class weights
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
-    model.to(device)
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, train_accuracies, label='Training Accuracy')
+    plt.plot(epochs, val_accuracies, label='Validation Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.title('Training and Validation Accuracy')
 
-    results = []
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, 'training_metrics.png'))
+    plt.close()
 
-    for epoch in range(num_epochs):
-        model.train()
+def print_confusion_matrix_with_labels(cm):
+    """
+    Print confusion matrix with clear labels for binary classification
+    
+    Confusion Matrix Structure:
+    [TN  FP]    [non-Monet predicted correctly    non-Monet predicted as Monet]
+    [FN  TP]    [Monet predicted as non-Monet     Monet predicted correctly]
+    """
+    print("\nConfusion Matrix Breakdown:")
+    print(f"True Negatives (non-Monet correctly identified): {cm[0][0]}")
+    print(f"False Positives (non-Monet wrongly identified as Monet): {cm[0][1]}")
+    print(f"False Negatives (Monet wrongly identified as non-Monet): {cm[1][0]}")
+    print(f"True Positives (Monet correctly identified): {cm[1][1]}")
+
+class MonetNonMonetClassifier:
+    def __init__(self, learning_rate=config.LEARNING_RATE):  # Use learning rate from config
+        # Initialize ResNet-101 with pretrained weights
+        self.model = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
+        
+        # Modify final layer for binary classification
+        num_ftrs = self.model.fc.in_features
+        self.model.fc = nn.Sequential(
+            nn.Dropout(0.3),  # Light dropout to prevent overfitting
+            nn.Linear(num_ftrs, 1),  # Single output for binary classification
+        )
+        
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
+        
+        # Binary Cross-Entropy Loss with logits for binary classification
+        self.criterion = nn.BCEWithLogitsLoss()
+        
+        # Basic Adam optimizer without weight decay to allow focus on Monet features
+        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        
+        # Learning rate scheduler
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, 
+            mode='min',
+            factor=0.1,
+            patience=3
+        )
+
+    def train_epoch(self, train_loader):
+        self.model.train()
         running_loss = 0.0
-        correct_train = 0
-        total_train = 0
+        predictions = []
+        labels = []
         
-        # Wrap the train_loader with tqdm for a progress bar
-        for images, labels in tqdm(train_loader, desc=f"Training Epoch {epoch+1}/{num_epochs}", unit="batch"):
-            images, labels = images.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+        for images, batch_labels in tqdm(train_loader, desc="Training"):
+            images = images.to(self.device)
+            batch_labels = batch_labels.to(self.device).float().unsqueeze(1)  # Ensure labels are float and match output shape
+            
+            self.optimizer.zero_grad()
+            outputs = self.model(images)
+            loss = self.criterion(outputs, batch_labels)
+            
             loss.backward()
-            optimizer.step()
+            self.optimizer.step()
+            
             running_loss += loss.item() * images.size(0)
-            _, predicted = torch.max(outputs, 1)
-            total_train += labels.size(0)
-            correct_train += (predicted == labels).sum().item()
-            
-            # Debugging statements
-            print(f"Batch Labels: {labels.cpu().numpy()}")
-            print(f"Batch Predictions: {predicted.cpu().numpy()}")
-            print(f"Batch Loss: {loss.item()}")
-
-        epoch_loss = running_loss / len(train_loader.dataset)
-        train_accuracy = correct_train / total_train
-        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}, Training Accuracy: {train_accuracy:.4f}')
-
-        # Validation
-        model.eval()
-        correct_val = 0
-        total_val = 0
-        running_val_loss = 0.0
+            predicted = (torch.sigmoid(outputs) > 0.5).float()  # Convert logits to binary predictions
+            predictions.extend(predicted.cpu().numpy())
+            labels.extend(batch_labels.cpu().numpy())
         
-        # Wrap the val_loader with tqdm for a progress bar
+        epoch_loss = running_loss / len(train_loader.dataset)
+        epoch_f1 = f1_score(labels, predictions, pos_label=1)
+        epoch_acc = np.mean(np.array(predictions) == np.array(labels))
+        
+        cm = confusion_matrix(labels, predictions, labels=[0, 1])
+        print("\nTraining Confusion Matrix:")
+        print_confusion_matrix_with_labels(cm)
+        
+        return epoch_loss, epoch_acc, epoch_f1
+
+    def validate(self, val_loader):
+        self.model.eval()
+        running_loss = 0.0
+        predictions = []
+        labels = []
+        
         with torch.no_grad():
-            for images, labels in tqdm(val_loader, desc=f"Validation Epoch {epoch+1}/{num_epochs}", unit="batch"):
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-                running_val_loss += loss.item() * images.size(0)
-                _, predicted = torch.max(outputs, 1)
-                total_val += labels.size(0)
-                correct_val += (predicted == labels).sum().item()
+            for images, batch_labels in tqdm(val_loader, desc="Validation"):
+                images = images.to(self.device)
+                batch_labels = batch_labels.to(self.device).float().unsqueeze(1)  # Ensure labels are float and match output shape
                 
-                # Debugging statements
-                print(f"Validation Batch Labels: {labels.cpu().numpy()}")
-                print(f"Validation Batch Predictions: {predicted.cpu().numpy()}")
-                print(f"Validation Batch Loss: {loss.item()}")
+                outputs = self.model(images)
+                loss = self.criterion(outputs, batch_labels)
+                
+                running_loss += loss.item() * images.size(0)
+                predicted = (torch.sigmoid(outputs) > 0.5).float()  # Convert logits to binary predictions
+                predictions.extend(predicted.cpu().numpy())
+                labels.extend(batch_labels.cpu().numpy())
+        
+        val_loss = running_loss / len(val_loader.dataset)
+        val_f1 = f1_score(labels, predictions, pos_label=1)
+        val_acc = np.mean(np.array(predictions) == np.array(labels))
+        
+        cm = confusion_matrix(labels, predictions, labels=[0, 1])
+        print("\nValidation Confusion Matrix:")
+        print_confusion_matrix_with_labels(cm)
+        
+        # Print predictions and actual labels for debugging
+        print("\nValidation Predictions vs Actual Labels:")
+        print(f"Predictions: {''.join(map(str, predictions))}")
+        print(f"Actual Labels: {''.join(map(str, labels))}")
+        
+        return val_loss, val_acc, val_f1
 
-        val_loss = running_val_loss / len(val_loader.dataset)
-        val_accuracy = correct_val / total_val
-        print(f'Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}')
-
-        # Collect results for CSV
-        results.append([epoch+1, epoch_loss, train_accuracy, val_loss, val_accuracy])
-
-    # Save results to CSV
-    save_to_csv(results, csv_filepath, headers=['Epoch', 'Training Loss', 'Training Accuracy', 'Validation Loss', 'Validation Accuracy'])
-
-    # Ensure the directory exists and save the model
-    ensure_dir_exists(os.path.dirname(config.MODEL_PATH))
-    save_model(model, config.MODEL_PATH)
-
-def show_image(image, title, ax):
-    """Helper function to display an image with a title."""
-    ax.imshow(image.permute(1, 2, 0).cpu().numpy())
-    ax.set_title(title)
-    ax.axis('off')
-    plt.draw()
-    plt.pause(0.001)  # Pause to allow the plot to update
-
-def test_model(model, test_loader, csv_filepath):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-    model.eval()
-    correct = 0
-    total = 0
-    
-    all_labels = []
-    all_predictions = []
-
-    # Create a figure and axis for displaying images
-    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-
-    with torch.no_grad():
-        for images, labels in tqdm(test_loader, desc="Testing", unit="batch"):
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            probabilities = torch.nn.functional.softmax(outputs, dim=1)
-            _, predicted = torch.max(outputs, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+    def train(self, train_loader, val_loader, save_dir=os.path.dirname(config.RESULTS_PATH)):
+        os.makedirs(save_dir, exist_ok=True)
+        results = []
+        best_val_f1 = 0
+        patience_counter = 0
+        early_stopping_patience = 5
+        
+        for epoch in range(config.NUM_EPOCHS):  # Use NUM_EPOCHS from config
+            print(f'\nEpoch {epoch + 1}/{config.NUM_EPOCHS}')
             
-            all_labels.extend(labels.cpu().numpy())
-            all_predictions.extend(predicted.cpu().numpy())
+            # Training phase
+            train_loss, train_acc, train_f1 = self.train_epoch(train_loader)
             
-            # Display each image with the prediction and whether it is correct
-            for i in range(images.size(0)):
-                image = images[i]
-                label = labels[i].item()
-                prediction = predicted[i].item()
-                title = f'Prediction: {"Monet" if prediction == 1 else "Non-Monet"}, Actual: {"Monet" if label == 1 else "Non-Monet"}, {"Correct" if prediction == label else "Incorrect"}'
-                show_image(image, title, ax)
-    
-    accuracy = correct / total
-    print(f'Test Accuracy: {accuracy:.4f}')
+            # Validation phase
+            val_loss, val_acc, val_f1 = self.validate(val_loader)
+            
+            # Update learning rate based on validation loss
+            self.scheduler.step(val_loss)
+            
+            # Print metrics
+            print(f'Training - Loss: {train_loss:.4f}, Accuracy: {train_acc:.4f}, F1 (Monet class): {train_f1:.4f}')
+            print(f'Validation - Loss: {val_loss:.4f}, Accuracy: {val_acc:.4f}, F1 (Monet class): {val_f1:.4f}')
+            
+            results.append([epoch + 1, train_loss, train_acc, val_loss, val_acc])
+            
+            # Save best model based on validation F1 score for Monet class
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
+                torch.save(self.model.state_dict(), config.MODEL_PATH)  # Use MODEL_PATH from config
+                patience_counter = 0
+                print(f"New best model saved! (Monet F1: {best_val_f1:.4f})")
+            else:
+                patience_counter += 1
+                if patience_counter >= early_stopping_patience:
+                    print(f"Early stopping triggered after {epoch + 1} epochs")
+                    break
+        
+        # Save and plot results
+        with open(config.RESULTS_PATH, 'w', newline='') as f:  # Use RESULTS_PATH from config
+            writer = csv.writer(f)
+            writer.writerow(['Epoch', 'Training Loss', 'Training Accuracy', 'Validation Loss', 'Validation Accuracy'])
+            writer.writerows(results)
+        
+        plot_training_metrics(results, save_dir)
+        return results
 
-    # Calculate metrics
-    precision = precision_score(all_labels, all_predictions, pos_label=1, zero_division=1)
-    recall = recall_score(all_labels, all_predictions, pos_label=1, zero_division=1)
-    f1 = f1_score(all_labels, all_predictions, pos_label=1, zero_division=1)
-    accuracy = accuracy_score(all_labels, all_predictions)
-    
-    # Ensure the confusion matrix has the correct shape
-    tn, fp, fn, tp = confusion_matrix(all_labels, all_predictions, labels=[0, 1]).ravel()
-    
-    # Debug prints for confusion matrix
-    print(f"Confusion Matrix: TN: {tn}, FP: {fp}, FN: {fn}, TP: {tp}")
-    
-    # Prepare results
-    results = ['Overall', precision, recall, f1, accuracy, tn, fp, fn, tp]
+    def load_model(self, model_path):
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
 
-    # Write results to CSV
-    write_results_to_csv(results, csv_filepath)
-
-    # Print results to console
-    print("Overall Results:")
-    print(f"Precision: {precision:.2f}")
-    print(f"Recall: {recall:.2f}")
-    print(f"F1 Score: {f1:.2f}")
-    print(f"Accuracy: {accuracy:.2f}")
-    print(f"TN: {tn}, FP: {fp}, FN: {fn}, TP: {tp}")
-
-    print(f"Results written to {csv_filepath}")
-
-def write_results_to_csv(results, filename):
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Category', 'Precision', 'Recall', 'F1 Score', 'Accuracy', 'TN', 'FP', 'FN', 'TP'])
-        writer.writerow(results)
+    def to_device(self, device):
+        self.model.to(device)
 
 if __name__ == "__main__":
-    model = create_model()
-    # Comment out the line that loads the model weights
-    # model.load_state_dict(torch.load(config.MODEL_PATH, weights_only=True))  # Set weights_only=True
-    train_model(model, train_loader, val_loader)
-    test_model(model, monet_test_loader, csv_filepath=config.MONET_TESTING_RESULTS_PATH)
-    test_model(model, non_monet_test_loader, csv_filepath=config.NON_MONET_TESTING_RESULTS_PATH)
+    # Load the data
+    train_loader, val_loader, monet_test_loader, non_monet_test_loader = load_data(
+        batch_size=config.BATCH_SIZE
+    )
+    
+    # Initialize and train the classifier
+    classifier = MonetNonMonetClassifier()
+    classifier.train(train_loader, val_loader)

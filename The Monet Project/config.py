@@ -1,20 +1,13 @@
-# config.py
 NUM_EPOCHS = 30
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0001
 BATCH_SIZE = 32
 
 DATA_DIR = './data'
-
-MODEL_TRAINING_RESULTS_PATH = './ModelTrainingResults/results.csv'
-MONET_TESTING_RESULTS_PATH = './ModelTestingResults/monet_results.csv'
-NON_MONET_TESTING_RESULTS_PATH = './ModelTestingResults/non_monet_results.csv'
+RESULTS_PATH = './ModelTrainingResults/results.csv'
 MODEL_PATH = './models/monet_model.pth'
-
 MONET_DATA_DIR = './data/large_monet_dataset'
 NON_MONET_DATA_DIR = './data/large_non-monet_dataset'
-
-
-MONET_TESTING_DIR = './data/monet_testing'
-NON_MONET_TESTING_DIR = './data/ai_data'
-
-
+TEST_DATA_DIR = './data/testData10PercentJSON'
+NON_MONET_TEST_DIR = './data/ai_data'
+MONET_TEST_DIR = './data/monet_test'
+F_SCORE_RESULTS_PATH = './F-Score_Results/results.csv'
