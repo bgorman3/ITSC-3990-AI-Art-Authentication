@@ -26,13 +26,9 @@ class CustomImageDataset(Dataset):
             image = self.transform(image)
         return image, self.label
 
-# Define the transformations
+# Define the transformations for evaluation (without augmentation)
 transform = transforms.Compose([
     transforms.Resize((224, 224)),  # Resize to match model input size
-    transforms.RandomRotation(30),  # Randomly rotate the image
-    transforms.RandomResizedCrop(224),  # Randomly crop and resize the image
-    transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),  # Apply color jitter
-    transforms.RandomHorizontalFlip(),  # Randomly flip the image horizontally
     transforms.ToTensor(),  # Convert to tensor
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  # Normalize
 ])
@@ -41,9 +37,9 @@ transform = transforms.Compose([
 monet_dataset = CustomImageDataset(image_dir=config.MONET_TEST_DIR, label=1, transform=transform)
 non_monet_dataset = CustomImageDataset(image_dir=config.NON_MONET_TEST_DIR, label=0, transform=transform)
 
-# Randomly select 20 images from each category
-selected_monet_indices = random.sample(range(len(monet_dataset)), 20)
-selected_non_monet_indices = random.sample(range(len(non_monet_dataset)), 20)
+# Randomly select 5 images from each category
+selected_monet_indices = random.sample(range(len(monet_dataset)), 5)
+selected_non_monet_indices = random.sample(range(len(non_monet_dataset)), 5)
 
 # Create subsets for the selected images
 monet_subset = Subset(monet_dataset, selected_monet_indices)
@@ -58,7 +54,7 @@ def evaluate_images(model, data_loader, label):
     model.to(device)
     model.eval()
 
-    fig, axes = plt.subplots(4, 5, figsize=(15, 12))
+    fig, axes = plt.subplots(1, 5, figsize=(20, 8))  # Adjusted figsize for better fit
     axes = axes.flatten()
 
     with torch.no_grad():
@@ -77,7 +73,8 @@ def evaluate_images(model, data_loader, label):
             img = images[0].permute(1, 2, 0).cpu().numpy()
             img = (img - img.min()) / (img.max() - img.min())  # Normalize to [0, 1] for display
             ax.imshow(img)
-            ax.set_title(f'{label} Non-Monet: {prob_non_monet:.2f}, Monet: {prob_monet:.2f}')
+            title_text = f'{label}\nNM: {prob_non_monet:.2f}, M: {prob_monet:.2f}'
+            ax.set_title(title_text, fontsize=30, fontweight='bold') 
             ax.axis('off')
 
     plt.tight_layout()
@@ -92,4 +89,4 @@ if __name__ == "__main__":
     evaluate_images(model.model, monet_loader, "Monet Paintings")
 
     print("Evaluating Non-Monet images from the original evaluation dataset")
-    evaluate_images(model.model, non_monet_loader, "Non-Monet Paintings")
+    evaluate_images(model.model, non_monet_loader, "AI Paintings")
