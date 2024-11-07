@@ -1,0 +1,2 @@
+Accuracy,Precision,Recall,F1 Score,Confusion Matrix
+0.4155844155844156,0.0,1.0,0.0,"[[32, 45], [0, 0]]"

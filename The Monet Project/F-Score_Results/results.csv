@@ -1,2 +1,2 @@
-Accuracy,Precision,Recall,F1 Score,Confusion Matrix
-0.4025974025974026,0.0,1.0,0.0,"[[31, 46], [0, 0]]"
+Accuracy,Precision,Recall,F1 Score,Confusion Matrix,Non-Monet Accuracy
+0.5404411764705882,0.5222672064777328,0.9485294117647058,0.6736292428198434,"[[18, 118], [7, 129]]",0.1323529411764706
